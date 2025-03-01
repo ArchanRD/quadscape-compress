@@ -26,8 +26,9 @@ def compress_image_dct(img_array, quality_factor):
     - compression_data: Dictionary with metadata about the compression
     """
     # Convert quality_factor (5-100) to a quantization scale (higher value = more compression)
-    # We invert the scale since higher quality_factor should mean less compression
-    quantization_scale = 100 - quality_factor + 5  # 5-100 -> 100-5
+    # Invert and scale the quality factor to get appropriate compression level
+    # Lower quality_factor should result in higher compression (higher quantization)
+    quantization_scale = (105 - quality_factor) * 2  # Scale more aggressively
     
     # Define block size (8x8 is standard for JPEG)
     block_size = 8
@@ -36,9 +37,13 @@ def compress_image_dct(img_array, quality_factor):
     height, width, channels = img_array.shape
     compressed_array = np.zeros_like(img_array, dtype=float)
     
+    # Track actual zeros (compression effect)
+    total_coefficients = 0
+    zero_coefficients = 0
+    
     # Count processed blocks for statistics
     processed_blocks = 0
-    total_blocks = ((height + block_size - 1) // block_size) * ((width + block_size - 1) // block_size)
+    total_blocks = ((height + block_size - 1) // block_size) * ((width + block_size - 1) // block_size) * channels
     
     # Process each color channel separately
     for c in range(channels):
@@ -61,20 +66,29 @@ def compress_image_dct(img_array, quality_factor):
                 # Apply 2D DCT
                 dct_block = dct2d(block)
                 
-                # Apply quantization (simulating JPEG-like compression)
-                # Higher quantization_scale means more aggressive quantization
-                # Create a basic quantization matrix (similar to JPEG's)
-                q_matrix = np.ones((block_size, block_size), dtype=float)
+                # Create a quantization matrix that emphasizes low-frequency retention
+                # Similar to JPEG standard quantization matrix
+                q_matrix = np.zeros((block_size, block_size), dtype=float)
                 for x in range(block_size):
                     for y in range(block_size):
-                        q_matrix[x, y] = 1 + (x + y) * quantization_scale / 10
+                        # Emphasize low frequencies (top-left corner of the block)
+                        # Higher values in bottom-right (high frequencies) will lead to more zeros
+                        q_matrix[x, y] = 1 + (x + y + 1) * quantization_scale / 10
+                
+                # Make high frequencies get quantized more aggressively
+                q_matrix[4:, 4:] *= 2.0
                 
                 # Quantize the DCT coefficients
                 quantized = np.round(dct_block / q_matrix)
                 
-                # Simulate some effects of compression by zeroing out small coefficients
-                # This is a simplified version of what happens in real compression
-                quantized[np.abs(quantized) < quantization_scale/10] = 0
+                # Count zeros for compression statistics
+                total_coefficients += block_size * block_size
+                zero_coefficients += np.sum(quantized == 0)
+                
+                # For higher compression, zero out more aggressively based on quality_factor
+                threshold = max(0.1, (100 - quality_factor) / 100)
+                mask = np.abs(quantized) < threshold * np.max(np.abs(quantized))
+                quantized[mask] = 0
                 
                 # Dequantize
                 dequantized = quantized * q_matrix
@@ -119,6 +133,10 @@ def compress_image_dct(img_array, quality_factor):
     # Create a PIL image with the block visualization
     block_visualization = Image.fromarray(block_map)
     
+    # Calculate real compression ratio based on zeroed coefficients
+    zero_ratio = zero_coefficients / total_coefficients if total_coefficients > 0 else 0
+    actual_compression_ratio = zero_ratio * 100
+    
     # Prepare compression statistics
     compression_data = {
         "algorithm": "DCT",
@@ -126,6 +144,10 @@ def compress_image_dct(img_array, quality_factor):
         "blockSize": block_size,
         "blocksProcessed": processed_blocks,
         "totalBlocks": total_blocks,
+        "zeroCoefficients": int(zero_coefficients),
+        "totalCoefficients": total_coefficients,
+        "zeroRatio": zero_ratio,
+        "compressionRatio": actual_compression_ratio,
         "dimensions": {
             "width": width,
             "height": height

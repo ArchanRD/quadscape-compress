@@ -140,10 +140,8 @@ def compress():
         compressed_img.save(buffer, format='PNG')
         buffer.seek(0)
         
-        # Calculate approximate compression metrics
-        original_size = width * height * 3  # RGB image, 3 bytes per pixel
-        compressed_size = compression_data['blocksProcessed'] * 64  # Rough estimate, 64 coefficients per block
-        compression_ratio = (original_size - compressed_size) / original_size * 100
+        # Use the actual compression ratio from the DCT algorithm
+        compression_ratio = compression_data['compressionRatio']
         processing_time = time.time() - start_time
         
         # Create a response with the compressed image and statistics
@@ -152,13 +150,15 @@ def compress():
             'algorithm': 'dct',
             'blockVisualization': compression_data['blockVisualization'],
             'stats': {
-                'originalSize': original_size,
-                'compressedSize': compressed_size,
+                'originalSize': width * height * 3,  # RGB image, 3 bytes per pixel
+                'compressedSize': int((width * height * 3) * (1 - compression_data['zeroRatio'])),
                 'compressionRatio': round(compression_ratio, 1),
                 'processingTime': round(processing_time, 2),
                 'blockCount': compression_data['blocksProcessed'],
                 'blockSize': compression_data['blockSize'],
-                'qualityFactor': compression_data['qualityFactor']
+                'qualityFactor': compression_data['qualityFactor'],
+                'zeroCoefficients': compression_data['zeroCoefficients'],
+                'totalCoefficients': compression_data['totalCoefficients']
             }
         }
     

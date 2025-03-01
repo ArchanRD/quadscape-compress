@@ -2,7 +2,8 @@
 import React, { useState, useEffect } from 'react';
 import { Maximize2, Download, RefreshCw } from 'lucide-react';
 import QuadTreeVisualizer from './QuadTreeVisualizer';
-import { QuadNode, generateSampleQuadTree, calculateCompressionRatio } from '../lib/quadTreeUtils';
+import { QuadNode, calculateCompressionRatio } from '../lib/quadTreeUtils';
+import { toast } from 'sonner';
 
 interface ComparisonViewProps {
   originalImage: string | null;
@@ -14,33 +15,73 @@ const ComparisonView: React.FC<ComparisonViewProps> = ({ originalImage }) => {
   const [compressionRatio, setCompressionRatio] = useState<number>(0);
   const [isProcessing, setIsProcessing] = useState(false);
   const [threshold, setThreshold] = useState(30);
+  const [stats, setStats] = useState({
+    originalSize: 0,
+    compressedSize: 0,
+    processingTime: 0,
+    leafCount: 0
+  });
   
   useEffect(() => {
     if (originalImage) {
       processImage();
     }
-  }, [originalImage, threshold]);
+  }, [originalImage]);
   
-  const processImage = () => {
+  const processImage = async () => {
     if (!originalImage) return;
     
     setIsProcessing(true);
     
-    // For demo purposes, let's simulate processing time
-    setTimeout(() => {
-      // Generate a sample quad tree for visualization
-      const sampleTree = generateSampleQuadTree(4);
-      setQuadTree(sampleTree);
+    try {
+      // Send the image to the backend for processing
+      const response = await fetch('http://localhost:5000/api/compress', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          imageData: originalImage,
+          threshold: threshold
+        })
+      });
       
-      // For demo purposes, we'll just use the original image as "compressed"
-      setCompressedImage(originalImage);
+      if (!response.ok) {
+        const errorData = await response.json();
+        throw new Error(errorData.error || 'Failed to compress image');
+      }
       
-      // Calculate a sample compression ratio
-      const ratio = calculateCompressionRatio(sampleTree);
-      setCompressionRatio(ratio);
+      const data = await response.json();
       
+      // Update state with the compressed image and quad tree data
+      setCompressedImage(data.compressedImage);
+      setQuadTree(data.quadTree);
+      setCompressionRatio(data.stats.compressionRatio);
+      setStats({
+        originalSize: data.stats.originalSize,
+        compressedSize: data.stats.compressedSize,
+        processingTime: data.stats.processingTime,
+        leafCount: data.stats.leafCount
+      });
+      
+      toast.success('Image compressed successfully!');
+    } catch (error) {
+      console.error('Error compressing image:', error);
+      toast.error('Failed to compress image. Please try again.');
+    } finally {
       setIsProcessing(false);
-    }, 1200);
+    }
+  };
+  
+  const handleDownload = () => {
+    if (compressedImage) {
+      const link = document.createElement('a');
+      link.href = compressedImage;
+      link.download = 'compressed-image.png';
+      document.body.appendChild(link);
+      link.click();
+      document.body.removeChild(link);
+    }
   };
   
   if (!originalImage) return null;
@@ -100,7 +141,10 @@ const ComparisonView: React.FC<ComparisonViewProps> = ({ originalImage }) => {
                 <button className="p-2 rounded-md bg-black/50 text-white hover:bg-black/70 transition-colors">
                   <Maximize2 size={16} />
                 </button>
-                <button className="p-2 rounded-md bg-black/50 text-white hover:bg-black/70 transition-colors">
+                <button 
+                  className="p-2 rounded-md bg-black/50 text-white hover:bg-black/70 transition-colors"
+                  onClick={handleDownload}
+                >
                   <Download size={16} />
                 </button>
               </div>
@@ -159,21 +203,23 @@ const ComparisonView: React.FC<ComparisonViewProps> = ({ originalImage }) => {
                   <div className="grid grid-cols-2 gap-4">
                     <div>
                       <p className="text-xs text-muted-foreground">Original Size</p>
-                      <p className="text-sm font-medium">1024 KB</p>
+                      <p className="text-sm font-medium">{Math.round(stats.originalSize / 1024)} KB</p>
                     </div>
                     <div>
                       <p className="text-xs text-muted-foreground">Compressed Size</p>
                       <p className="text-sm font-medium">
-                        {isProcessing ? "Calculating..." : `${Math.round(1024 * (1 - compressionRatio / 100))} KB`}
+                        {isProcessing ? "Calculating..." : `${Math.round(stats.compressedSize / 1024)} KB`}
                       </p>
                     </div>
                     <div>
                       <p className="text-xs text-muted-foreground">Quad Nodes</p>
-                      <p className="text-sm font-medium">{isProcessing ? "Counting..." : "124"}</p>
+                      <p className="text-sm font-medium">{isProcessing ? "Counting..." : stats.leafCount}</p>
                     </div>
                     <div>
                       <p className="text-xs text-muted-foreground">Processing Time</p>
-                      <p className="text-sm font-medium">{isProcessing ? "..." : "1.2 seconds"}</p>
+                      <p className="text-sm font-medium">
+                        {isProcessing ? "..." : `${stats.processingTime.toFixed(2)} seconds`}
+                      </p>
                     </div>
                   </div>
                 </div>

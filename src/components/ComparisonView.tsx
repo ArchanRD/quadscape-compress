@@ -86,6 +86,11 @@ const ComparisonView: React.FC<ComparisonViewProps> = ({ originalImage }) => {
   
   if (!originalImage) return null;
   
+  // Calculate expected quality level based on threshold
+  const qualityLevel = threshold <= 15 ? "High" : 
+                      threshold <= 40 ? "Medium" : 
+                      threshold <= 70 ? "Low" : "Very Low";
+  
   return (
     <div className="w-full max-w-6xl mx-auto mt-8 animate-fade-in">
       <div className="mb-6 text-center">
@@ -182,7 +187,9 @@ const ComparisonView: React.FC<ComparisonViewProps> = ({ originalImage }) => {
                 <div>
                   <div className="mb-2 flex justify-between">
                     <label className="text-sm font-medium">Compression Threshold</label>
-                    <span className="text-sm text-muted-foreground">{threshold}</span>
+                    <span className="text-sm text-muted-foreground">
+                      {threshold} ({qualityLevel} Quality)
+                    </span>
                   </div>
                   <input
                     type="range"

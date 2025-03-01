@@ -52,6 +52,12 @@ def compress_image(img_array: np.ndarray, threshold: int = 30, max_depth: int = 
     # Counter for leaf nodes (for compression statistics)
     leaf_count = [0]
     
+    # Adjust threshold based on input value
+    # For higher quality (lower threshold), we need to be more strict about variance
+    # Convert input threshold (5-100 range) to a suitable variance threshold
+    # Lower input value = higher quality = lower variance threshold
+    adjusted_threshold = (threshold ** 2) / 4  # Square and scale down for more sensible thresholds
+    
     def process_quadrant(node: QuadNode, img: np.ndarray, depth: int):
         if depth >= max_depth:
             # Maximum depth reached, use average color
@@ -66,7 +72,7 @@ def compress_image(img_array: np.ndarray, threshold: int = 30, max_depth: int = 
             variances = np.var(img, axis=(0, 1))
             max_variance = np.max(variances)
             
-            if max_variance <= threshold * threshold:  # Square the threshold for comparison with variance
+            if max_variance <= adjusted_threshold:  # Use the adjusted threshold
                 # Pixels are similar enough, use average color
                 avg_color = np.mean(img, axis=(0, 1)).astype(int)
                 node.color = rgb_to_str((avg_color[0], avg_color[1], avg_color[2]))

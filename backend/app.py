@@ -48,7 +48,17 @@ def compress():
             return jsonify({'error': f'Error opening image: {str(e)}'}), 400
     
     # Get compression threshold from request, default to 30
+    # Higher threshold value = less quality but better compression
+    # Lower threshold value = higher quality but less compression
     threshold = int(request.json.get('threshold', 30))
+    
+    # Dynamic max_depth based on image size and quality setting
+    # For higher quality (lower threshold), we use higher max_depth
+    max_depth = 8
+    if threshold < 20:  # High quality requested
+        max_depth = 10
+    elif threshold > 60:  # Low quality requested
+        max_depth = 6
     
     # Convert image to RGB if it's not already
     if img.mode != 'RGB':
@@ -60,8 +70,8 @@ def compress():
     # Convert to numpy array for processing
     img_array = np.array(img)
     
-    # Compress the image using quad-tree
-    root_node, leaf_count = compress_image(img_array, threshold)
+    # Compress the image using quad-tree with the dynamic max_depth
+    root_node, leaf_count = compress_image(img_array, threshold, max_depth)
     
     # Create a new image from the compressed data
     compressed_img = Image.new('RGB', (width, height))

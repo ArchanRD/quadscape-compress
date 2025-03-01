@@ -1,6 +1,6 @@
 
 import React, { useState, useEffect } from 'react';
-import { Maximize2, Download, RefreshCw } from 'lucide-react';
+import { Maximize2, Download, RefreshCw, GridIcon } from 'lucide-react';
 import QuadTreeVisualizer from './QuadTreeVisualizer';
 import { QuadNode, calculateCompressionRatio } from '../lib/quadTreeUtils';
 import { toast } from 'sonner';
@@ -12,13 +12,17 @@ interface ComparisonViewProps {
 const ComparisonView: React.FC<ComparisonViewProps> = ({ originalImage }) => {
   const [quadTree, setQuadTree] = useState<QuadNode | null>(null);
   const [compressedImage, setCompressedImage] = useState<string | null>(null);
+  const [blockVisualization, setBlockVisualization] = useState<string | null>(null);
   const [compressionRatio, setCompressionRatio] = useState<number>(0);
   const [isProcessing, setIsProcessing] = useState(false);
   const [threshold, setThreshold] = useState(30);
+  const [algorithm, setAlgorithm] = useState<'dct' | 'quadtree'>('dct');
   const [stats, setStats] = useState({
     originalSize: 0,
     compressedSize: 0,
     processingTime: 0,
+    blockCount: 0,
+    blockSize: 8,
     leafCount: 0
   });
   
@@ -42,7 +46,8 @@ const ComparisonView: React.FC<ComparisonViewProps> = ({ originalImage }) => {
         },
         body: JSON.stringify({
           imageData: originalImage,
-          threshold: threshold
+          threshold: threshold,
+          algorithm: algorithm
         })
       });
       
@@ -53,16 +58,34 @@ const ComparisonView: React.FC<ComparisonViewProps> = ({ originalImage }) => {
       
       const data = await response.json();
       
-      // Update state with the compressed image and quad tree data
+      // Update state with the compressed image and data
       setCompressedImage(data.compressedImage);
-      setQuadTree(data.quadTree);
       setCompressionRatio(data.stats.compressionRatio);
-      setStats({
-        originalSize: data.stats.originalSize,
-        compressedSize: data.stats.compressedSize,
-        processingTime: data.stats.processingTime,
-        leafCount: data.stats.leafCount
-      });
+      
+      // Handle algorithm-specific data
+      if (data.algorithm === 'quadtree') {
+        setQuadTree(data.quadTree);
+        setBlockVisualization(null);
+        setStats({
+          ...stats,
+          originalSize: data.stats.originalSize,
+          compressedSize: data.stats.compressedSize,
+          processingTime: data.stats.processingTime,
+          leafCount: data.stats.leafCount,
+          blockCount: 0
+        });
+      } else { // DCT
+        setQuadTree(null);
+        setBlockVisualization(data.blockVisualization);
+        setStats({
+          ...stats,
+          originalSize: data.stats.originalSize,
+          compressedSize: data.stats.compressedSize,
+          processingTime: data.stats.processingTime,
+          blockCount: data.stats.blockCount,
+          blockSize: data.stats.blockSize
+        });
+      }
       
       toast.success('Image compressed successfully!');
     } catch (error) {
@@ -96,7 +119,9 @@ const ComparisonView: React.FC<ComparisonViewProps> = ({ originalImage }) => {
       <div className="mb-6 text-center">
         <h2 className="text-2xl font-medium">Image Compression Results</h2>
         <p className="text-muted-foreground mt-2">
-          Adjust the threshold to control the balance between quality and compression
+          {algorithm === 'dct' 
+            ? "DCT-based compression similar to JPEG" 
+            : "Quad-Tree compression divides the image into regions"}
         </p>
       </div>
       
@@ -162,7 +187,9 @@ const ComparisonView: React.FC<ComparisonViewProps> = ({ originalImage }) => {
         <div className="col-span-1">
           <div className="rounded-lg overflow-hidden bg-card border shadow-sm h-full">
             <div className="p-4 border-b bg-muted/30">
-              <h3 className="font-medium">Quad-Tree Visualization</h3>
+              <h3 className="font-medium">
+                {algorithm === 'dct' ? 'DCT Block Visualization' : 'Quad-Tree Visualization'}
+              </h3>
             </div>
             <div className="p-4 flex flex-col items-center">
               {isProcessing ? (
@@ -170,8 +197,24 @@ const ComparisonView: React.FC<ComparisonViewProps> = ({ originalImage }) => {
                   <RefreshCw size={24} className="animate-spin text-muted-foreground mb-2" />
                   <p className="text-sm text-muted-foreground">Generating...</p>
                 </div>
-              ) : (
+              ) : algorithm === 'quadtree' ? (
                 quadTree && <QuadTreeVisualizer quadTree={quadTree} />
+              ) : blockVisualization ? (
+                <div className="flex flex-col items-center">
+                  <img 
+                    src={blockVisualization} 
+                    alt="DCT Blocks" 
+                    className="max-w-full max-h-[280px] object-contain border rounded"
+                  />
+                  <p className="text-xs text-muted-foreground mt-2">
+                    {stats.blockSize}x{stats.blockSize} pixel blocks
+                  </p>
+                </div>
+              ) : (
+                <div className="flex flex-col items-center justify-center h-[280px]">
+                  <GridIcon size={48} className="text-muted-foreground/30 mb-2" />
+                  <p className="text-sm text-muted-foreground">No visualization available</p>
+                </div>
               )}
             </div>
           </div>
@@ -184,24 +227,43 @@ const ComparisonView: React.FC<ComparisonViewProps> = ({ originalImage }) => {
             </div>
             <div className="p-6">
               <div className="space-y-6">
-                <div>
-                  <div className="mb-2 flex justify-between">
-                    <label className="text-sm font-medium">Compression Threshold</label>
-                    <span className="text-sm text-muted-foreground">
-                      {threshold} ({qualityLevel} Quality)
-                    </span>
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                  <div>
+                    <label className="text-sm font-medium mb-2 block">Algorithm</label>
+                    <select 
+                      value={algorithm}
+                      onChange={(e) => setAlgorithm(e.target.value as 'dct' | 'quadtree')}
+                      className="w-full h-10 rounded-md border border-input bg-background px-3 py-2 text-sm"
+                    >
+                      <option value="dct">DCT (JPEG-like)</option>
+                      <option value="quadtree">Quad-Tree</option>
+                    </select>
+                    <p className="text-xs text-muted-foreground mt-1">
+                      {algorithm === 'dct' 
+                        ? 'Discrete Cosine Transform - similar to JPEG' 
+                        : 'Recursive region subdivision based on similarity'}
+                    </p>
                   </div>
-                  <input
-                    type="range"
-                    min="5"
-                    max="100"
-                    value={threshold}
-                    onChange={(e) => setThreshold(parseInt(e.target.value))}
-                    className="w-full h-2 bg-secondary rounded-lg appearance-none cursor-pointer"
-                  />
-                  <div className="flex justify-between mt-1 text-xs text-muted-foreground">
-                    <span>Higher Quality</span>
-                    <span>Better Compression</span>
+                  
+                  <div>
+                    <div className="mb-2 flex justify-between">
+                      <label className="text-sm font-medium">Quality Control</label>
+                      <span className="text-sm text-muted-foreground">
+                        {threshold} ({qualityLevel} Quality)
+                      </span>
+                    </div>
+                    <input
+                      type="range"
+                      min="5"
+                      max="100"
+                      value={threshold}
+                      onChange={(e) => setThreshold(parseInt(e.target.value))}
+                      className="w-full h-2 bg-secondary rounded-lg appearance-none cursor-pointer"
+                    />
+                    <div className="flex justify-between mt-1 text-xs text-muted-foreground">
+                      <span>Higher Quality</span>
+                      <span>Better Compression</span>
+                    </div>
                   </div>
                 </div>
                 
@@ -218,15 +280,38 @@ const ComparisonView: React.FC<ComparisonViewProps> = ({ originalImage }) => {
                         {isProcessing ? "Calculating..." : `${Math.round(stats.compressedSize / 1024)} KB`}
                       </p>
                     </div>
-                    <div>
-                      <p className="text-xs text-muted-foreground">Quad Nodes</p>
-                      <p className="text-sm font-medium">{isProcessing ? "Counting..." : stats.leafCount}</p>
-                    </div>
+                    {algorithm === 'dct' ? (
+                      <>
+                        <div>
+                          <p className="text-xs text-muted-foreground">Block Count</p>
+                          <p className="text-sm font-medium">{isProcessing ? "Counting..." : stats.blockCount}</p>
+                        </div>
+                        <div>
+                          <p className="text-xs text-muted-foreground">Block Size</p>
+                          <p className="text-sm font-medium">{stats.blockSize}x{stats.blockSize} pixels</p>
+                        </div>
+                      </>
+                    ) : (
+                      <>
+                        <div>
+                          <p className="text-xs text-muted-foreground">Quad Nodes</p>
+                          <p className="text-sm font-medium">{isProcessing ? "Counting..." : stats.leafCount}</p>
+                        </div>
+                        <div>
+                          <p className="text-xs text-muted-foreground">Structure</p>
+                          <p className="text-sm font-medium">Recursive tree</p>
+                        </div>
+                      </>
+                    )}
                     <div>
                       <p className="text-xs text-muted-foreground">Processing Time</p>
                       <p className="text-sm font-medium">
                         {isProcessing ? "..." : `${stats.processingTime.toFixed(2)} seconds`}
                       </p>
+                    </div>
+                    <div>
+                      <p className="text-xs text-muted-foreground">Compression Ratio</p>
+                      <p className="text-sm font-medium">{isProcessing ? "..." : `${compressionRatio.toFixed(1)}%`}</p>
                     </div>
                   </div>
                 </div>
@@ -234,7 +319,10 @@ const ComparisonView: React.FC<ComparisonViewProps> = ({ originalImage }) => {
                 <div className="flex justify-between items-center pt-2">
                   <button 
                     className="px-4 py-2 rounded-md border hover:bg-muted/30 transition-colors text-sm"
-                    onClick={() => setThreshold(30)}
+                    onClick={() => {
+                      setThreshold(30);
+                      setAlgorithm('dct');
+                    }}
                   >
                     Reset to Default
                   </button>
